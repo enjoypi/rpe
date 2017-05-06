@@ -2,7 +2,6 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 05. May 2017 16:46
 %%%-------------------------------------------------------------------
 -module(agent_protocol).
 
@@ -100,8 +99,14 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_cast(_Request, State) ->
-  {noreply, State}.
+handle_cast(Request, State) ->
+  try
+    on_async_message(Request, State)
+  catch
+    _:R ->
+      lager:log(error, self(), "CAST ~p", [R]),
+      {noreply, State}
+  end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -118,15 +123,13 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(Info, State) ->
-  lager:log(debug, self(), "~p", [Info]),
-  RState =
-    try
-      on_info(Info, State)
-    catch
-      E:R ->
-        lager:log(error, self(), "~p", [R])
-    end,
-  {noreply, RState}.
+  try
+    on_async_message(Info, State)
+  catch
+    _:R ->
+      lager:log(error, self(), "INFO ~p", [R]),
+      {noreply, State}
+  end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -161,11 +164,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-on_info({tcp, _, Data},
+on_async_message({tcp, _, Data},
     State = #state{socket = Socket, transport = Transport}
 ) ->
-  ok = Transport:send(Socket, Data),
+  ok = gen_server:cast({echo_server, 'rpe1@0.0.0.0'}, {echo, node(), self(), ecommon:ms(), Data}),
   ok = Transport:setopts(Socket, [{active, once}]),
-  State;
-on_info(_Info, State) ->
-  {stop, normal, State}.
+  {noreply, State};
+on_async_message({echo, Node, Session, SendTime, Data},
+    State = #state{socket = Socket, transport = Transport}
+) ->
+  Now = ecommon:ms(),
+  lager:log(info, self(), "~p ~p ~pus ~pus ~p", [Node, Session, Now- SendTime, Now- Session, Data]),
+  ok = Transport:send(Socket, Data),
+  {noreply, State};
+on_async_message(Msg, State) ->
+  lager:log(error, self(), "unknown message ~p", [Msg]),
+  {noreply, State}.

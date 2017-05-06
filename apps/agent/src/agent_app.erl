@@ -16,6 +16,7 @@
 
 start(_StartType, _StartArgs) ->
   ok = lager:start(),
+  ok = sync:go(),
   ok = application:start(ranch),
   {ok, _} = ranch:start_listener(agent, 10,
     ranch_tcp, [{port, 5555}],

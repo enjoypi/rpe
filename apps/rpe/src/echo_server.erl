@@ -88,8 +88,14 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_cast(_Request, State) ->
-  {noreply, State}.
+handle_cast(Request, State) ->
+  try
+    on_async_message(Request, State)
+  catch
+    _:R ->
+      lager:log(error, self(), "~p", [R]),
+      {noreply, State}
+  end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -105,8 +111,14 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(_Info, State) ->
-  {noreply, State}.
+handle_info(Info, State) ->
+  try
+    on_async_message(Info, State)
+  catch
+    _:R ->
+      lager:log(error, self(), "~p", [R]),
+      {noreply, State}
+  end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -141,3 +153,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+on_async_message({echo, Node, Pid, SendTime, Data}, State) ->
+  lager:log(info, self(), "~p ~p ~pus ~p", [Node, SendTime, ecommon:ms() - SendTime, Data]),
+  ok = gen_server:cast(Pid, {echo, node(), SendTime, ecommon:ms(), Data}),
+  {noreply, State};
+on_async_message(Msg, State) ->
+  lager:log(error, ?MODULE, "unknown message ~p", [Msg]),
+  {noreply, State}.
