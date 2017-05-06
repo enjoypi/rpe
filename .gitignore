@@ -14,5 +14,6 @@ ebin
 erl_crash.dump
 log
 logs
+priv
 rebar3.crashdump
 rebar.lock
